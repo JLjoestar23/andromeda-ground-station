@@ -30,7 +30,61 @@ int main() {
     result = bind(s, (sockaddr*)&addr, sizeof(addr)); 
     assert(result != SOCKET_ERROR);
 
-    
+    data_packet packet; // initializing variable "packet" of type data_packet
+
+    long long total_packets = 0; // counting total number of packets sent by client
+    long long packets_recieved = 0; // counting number of packets recieved
+    long long last_sequence = -1; // stores the sequence ID of the last packet, keeps track of order
+    long long out_of_order = 0; // counting out of order packets
+
+    long long last_packet_arrival_time = -1; // stores last packet's arrival time
+    long long acc_delay = 0; // accumulated delay, used to calculate average jitter
+
+    while (true) {
+        while (total_packets < 1000) {
+            // recieve the packet and write its data to the packet struct
+            result = recv(s, (char*)&packet, sizeof(data_packet), 0);
+            assert(result != SOCKET_ERROR);
+
+            long long arrival_time = time(NULL); // Calculating arrival time
+
+            // if not the first packet, calculate delay
+            if (last_packet_arrival_time != -1) {
+                acc_delay += arrival_time - last_packet_arrival_time;
+            }
+
+            // if the current packet sequence is larger than last, update total packet count
+            if (packet.sequence > last_sequence) {
+                total_packets = packet.sequence;
+            } else {
+                // if it's not the latest packet, packet is out of order
+                out_of_order += 1;
+            }
+
+            packets_recieved += 1; // update counter because we recieved a packet
+
+            // updating last values to current values for next loop
+            last_sequence = packet.sequence;
+            last_packet_arrival_time = arrival_time;
+        }
+
+        double loss = (1 - (double)packets_recieved / total_packets) * 100; // calculating % of packets lost
+        
+        double jitter = (double)acc_delay / packets_recieved; // calculating average jitter
+
+        /*
+        printf("Loss: %.1f\n", loss);
+        printf("Jitter: %.0fms\n", jitter * 1000);
+        printf("Out of order: %lld\n", out_of_order);
+        
+        if (packet.sequence % 10) {
+            printf("%s\n", packet.test_string);
+        }
+        */
+        
+        printf("%s\n", packet.test_string);
+        
+    }
 
 }
 
