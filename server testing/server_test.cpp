@@ -41,32 +41,31 @@ int main() {
     long long acc_delay = 0; // accumulated delay, used to calculate average jitter
 
     while (true) {
-        while (total_packets < 1000) {
-            // recieve the packet and write its data to the packet struct
-            result = recv(s, (char*)&packet, sizeof(data_packet), 0);
-            assert(result != SOCKET_ERROR);
+        // recieve the packet and write its data to the packet struct
+        result = recv(s, (char*)&packet, sizeof(data_packet), 0);
+        assert(result != SOCKET_ERROR);
 
-            long long arrival_time = time(NULL); // Calculating arrival time
+        long long arrival_time = time(NULL); // Calculating arrival time
 
-            // if not the first packet, calculate delay
-            if (last_packet_arrival_time != -1) {
-                acc_delay += arrival_time - last_packet_arrival_time;
-            }
-
-            // if the current packet sequence is larger than last, update total packet count
-            if (packet.sequence > last_sequence) {
-                total_packets = packet.sequence;
-            } else {
-                // if it's not the latest packet, packet is out of order
-                out_of_order += 1;
-            }
-
-            packets_recieved += 1; // update counter because we recieved a packet
-
-            // updating last values to current values for next loop
-            last_sequence = packet.sequence;
-            last_packet_arrival_time = arrival_time;
+        // if not the first packet, calculate delay
+        if (last_packet_arrival_time != -1) {
+            acc_delay += arrival_time - last_packet_arrival_time;
         }
+
+        // if the current packet sequence is larger than last, update total packet count
+        if (packet.sequence > last_sequence) {
+            total_packets = packet.sequence;
+        } else {
+            // if it's not the latest packet, packet is out of order
+            out_of_order += 1;
+        }
+
+        packets_recieved += 1; // update counter because we recieved a packet
+
+        // updating last values to current values for next loop
+        last_sequence = packet.sequence;
+        last_packet_arrival_time = arrival_time;
+        
 
         double loss = (1 - (double)packets_recieved / total_packets) * 100; // calculating % of packets lost
         
