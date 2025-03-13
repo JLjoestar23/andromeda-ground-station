@@ -8,7 +8,7 @@ import matplotlib as mpl
 from PyQt6 import QtCore, QtWidgets, QtGui
 from gsmw import Ui_MainWindow
 import pyqtgraph as pg
-import deserialize
+import receive
 
 #testing 
 
@@ -23,9 +23,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
 
-        # initializing DataHandler class from deserialize.py
-        self.handler = deserialize.DataHandler()
-
         # setting up variables
         self.connect = 0
         self.status = ""
@@ -36,6 +33,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.output = None
         self.converted = None
         self.data_dict = {}
+
+        self.status_timer = QtCore.QTimer()
+
 
         # setting icon
         self.icon_path = os.path.join(
@@ -188,32 +188,41 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         )
 
         # once button is clicked...
-        self.ui.connect_toggle.clicked.connect(self.connect_to_server)
+        self.ui.connect_toggle.clicked.connect(self.connect_toggle)
         self.ui.mission_start_toggle.clicked.connect(self.toggle_record_data)
-
+        self.ui.save_data.clicked.connect(self.save_recorded_data)
         self.ui.autosave_toggle.clicked.connect(self.toggle_autosave)
 
+        # Set up a QTimer to periodically check the connection status
+        self.connection_timer = QtCore.QTimer(self)
+        self.connection_timer.timeout.connect(self.check_connection_status)
+        self.connection_timer.start(500)  # Check every 5000 milliseconds (5 seconds)
+        
+
     # button functions
-    def connect_to_server(self):
+    def connect_toggle(self):
         if self.connect == 0:
-            self.status = self.handler.establish_connection()
-            if (
-                self.status == "Connected"
-                or self.status == "Connected (no initial data)"
-            ):
-                self.connect = 1
-                self.ui.log_entry.appendPlainText(self.status)
-                self.ui.connect_toggle.setText("Disconnect")
-            else:
-                self.ui.log_entry.appendPlainText(self.status)
-        elif self.connect == 1:
-            self.status = self.handler.disconnect()
-            if self.status == "Disconnected":
-                self.connect = 0
-                self.ui.log_entry.appendPlainText(self.status)
-                self.ui.connect_toggle.setText("Connect")
-            else:
-                self.ui.log_entry.appendPlainText(self.status)
+            self.status = receive.connect_websocket()
+            self.ui.log_entry.appendPlainText(self.status)
+        elif self.connect == 1: 
+            self.status = receive.disconnect_websocket()
+            self.connect = 0
+            self.ui.log_entry.appendPlainText(self.status)
+            self.ui.connect_toggle.setText("Connect")
+
+    def check_connection_status(self):
+        """Check if the WebSocket is connected and update the status."""
+        if receive.ws and receive.ws.sock and receive.ws.sock.connected:
+            self.status = "Connected"
+            self.connect = 1
+            self.ui.connect_toggle.setText("Disconnect")
+        else:
+            self.status = "Disconnected, timeout occured"
+            self.connect = 0
+            self.ui.connect_toggle.setText("Connect")
+        self.prev_status = self.status
+        if self.status != self.prev_status:
+            self.ui.log_entry.appendPlainText(self.status)
 
     def toggle_record_data(self):
         if self.collect_data == 0 and self.connect == 1:
@@ -249,18 +258,22 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         Receives data packet and formats it into a dictionary where the values
         can be displayed in the GUI each update tick.
         """
-        self.handler.receive_data()
-        self.output = self.handler.split_data_list()
-        self.converted = self.handler.convert_to_float(self.output)
-        self.data_dict = deserialize.float_to_dict(self.converted)
 
     def updated_display(self):
         """
         Updates every element of the GUI.
         """
-        pass
+        self.update_plot("x_accel", np.random.rand(100), np.random.rand(100))
+        self.update_plot("y_accel", np.random.rand(100), np.random.rand(100))
+        self.update_plot("z_accel", np.random.rand(100), np.random.rand(100))
+    
+    def update_plot(self, data_series, x, y):
+        """
+        Updates selected plot on the GUI.
+        """
+        getattr(self.ui, data_series).setData(x, y)
 
-
+    
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     window = MainWindow()
