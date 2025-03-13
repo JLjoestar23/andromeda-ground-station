@@ -5,8 +5,8 @@ import time
 
 ws = None  # global websocket instance
 latest_message = None
-ws_thread = None # thread for websocket connection
-running = False # control flag for thread
+ws_thread = None  # thread for websocket connection
+running = False  # control flag for thread
 connection_event = threading.Event()  # event to signal connection status
 data = None
 
@@ -16,6 +16,7 @@ def on_message(ws, message):
     global data
     try:
         data = json.loads(message)
+        print(data)
     except json.JSONDecodeError:
         print("Invalid message received:", message)
 
@@ -28,15 +29,17 @@ def process_message():
 def on_error(ws, error):
     """Handle WebSocket errors."""
     print("WebSocket Error:", error)
+    connection_event.set()  # Signal that an error occurred
 
 def on_close(ws, close_status_code, close_msg):
     """Handle WebSocket closure."""
     print("WebSocket Closed")
+    connection_event.set()  # Signal that the connection was closed
 
 def on_open(ws):
     """Handle WebSocket connection."""
     print("WebSocket Connected")
-    connection_event.set()
+    connection_event.set()  # Signal that the connection was successful
 
 # functions to manage the websocket connection
 def run_websocket():
@@ -51,25 +54,25 @@ def run_websocket():
         on_open=on_open
     )
     while running:  # Keep running while the flag is True
-        #ws.run_forever(ping_interval=1, ping_timeout=0.5)
         ws.run_forever()
 
 def connect_websocket():
     """Start the WebSocket connection in a new thread."""
-    
-    # Check if the WebSocket is already connected
-    global ws_thread, running
+    global ws_thread, running, ws
     if ws_thread and ws_thread.is_alive():
         return "Already Connected"
     
     # Start the WebSocket connection
     running = True
+    connection_event.clear()  # Clear the event before starting the connection
     ws_thread = threading.Thread(target=run_websocket, daemon=True)
     ws_thread.start()
 
     # Check for valid connection
     if not connection_event.wait(timeout=2.5):
         running = False
+        if ws and ws.sock and ws.sock.connected:
+            ws.close()
         return "Failed to connect: Timeout"
 
     return "Connected"
@@ -78,11 +81,11 @@ def disconnect_websocket():
     """Disconnect from the WebSocket."""
     global ws, running
     running = False
-    if ws:
+    if ws and ws.sock and ws.sock.connected:
         ws.close()
         print("Disconnected from WebSocket")
     if ws_thread:
-        ws_thread.join() # Wait for the thread to finish
+        ws_thread.join()  # Wait for the thread to finish
     
     return "Disconnected"
 
@@ -92,4 +95,4 @@ if __name__ == "__main__":
         while True:
             process_message()
     except KeyboardInterrupt:
-            disconnect_websocket()
+        disconnect_websocket()

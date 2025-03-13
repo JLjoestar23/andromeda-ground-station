@@ -198,9 +198,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.connection_timer.timeout.connect(self.check_connection_status)
         self.connection_timer.start(500)  # Check every 5000 milliseconds (5 seconds)
         
+        
 
     # button functions
     def connect_toggle(self):
+        self.check_connection_status()
         if self.connect == 0:
             self.status = receive.connect_websocket()
             self.ui.log_entry.appendPlainText(self.status)
