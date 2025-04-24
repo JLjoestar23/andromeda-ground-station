@@ -20,11 +20,13 @@ def on_message(ws, message):
     except json.JSONDecodeError:
         print("Invalid message received:", message)
 
+'''
 def process_message():
     """Process the latest message."""
     global data
     print(data)
     # Add any additional processing logic here
+'''
 
 def on_error(ws, error):
     """Handle WebSocket errors."""
@@ -90,9 +92,5 @@ def disconnect_websocket():
     return "Disconnected"
 
 if __name__ == "__main__":
-    try:
+    while True:
         connect_websocket()
-        while True:
-            process_message()
-    except KeyboardInterrupt:
-        disconnect_websocket()
