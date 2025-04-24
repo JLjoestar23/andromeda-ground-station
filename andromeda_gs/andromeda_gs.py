@@ -10,7 +10,6 @@ from gsmw import Ui_MainWindow
 import pyqtgraph as pg
 import receive
 
-#testing 
 
 class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     """
@@ -25,7 +24,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
         # setting up variables
         self.connect = 0
-        self.status = ""
+        self.status = "Disconnected"
         self.collect_data = 0
         self.log_message = ""
         self.autosave = 0
@@ -34,6 +33,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.converted = None
         self.data_dict = {}
 
+        # initializing timer object
         self.status_timer = QtCore.QTimer()
 
 
@@ -47,7 +47,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.setWindowTitle("Andromeda Ground Station")
         pg.setConfigOptions(antialias=True)
 
-        # setting up plots
+        # setting up plot legends
         plot_LUT = {
             "bar_alt": ["Plot1", "m"],
             "kf_alt": ["Plot1", "g"],
@@ -193,38 +193,27 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.ui.save_data.clicked.connect(self.save_recorded_data)
         self.ui.autosave_toggle.clicked.connect(self.toggle_autosave)
 
-        self.connection_timer = QtCore.QTimer(self)
-        self.status_timer.timeout.connect(self.update_display) # Update plots every 200 milliseconds
-        self.connection_timer.start(200)  # Check every 200 milliseconds 
-        
+        # loop timer for display updates
+        self.update_timer = QtCore.QTimer(self)
+        self.update_timer.timeout.connect(self.fetch_data) # Update plots every 200 milliseconds
+        self.update_timer.start(200)  # Check every 200 milliseconds 
         
 
     # button functions
     # connect_toggle handles basic connectivity logic, needs a lot of improvement
     def connect_toggle(self):
-        self.check_connection_status()
-        if self.connect == 0:
+        """Toggle the WebSocket connection."""
+        if self.connect == 0:  # If not connected, attempt to connect
             self.status = receive.connect_websocket()
+            if self.status == "Connected":
+                self.connect = 1  # Update the connection state
+                self.ui.connect_toggle.setText("Disconnect")
             self.ui.log_entry.appendPlainText(self.status)
-        elif self.connect == 1: 
+        elif self.connect == 1:  # If connected, disconnect
             self.status = receive.disconnect_websocket()
-            self.connect = 0
-            self.ui.log_entry.appendPlainText(self.status)
+            self.connect = 0  # Update the connection state
             self.ui.connect_toggle.setText("Connect")
-
-    # def check_connection_status(self):
-    #     """Check if the WebSocket is connected and update the status."""
-    #     if receive.ws and receive.ws.sock and receive.ws.sock.connected:
-    #         self.status = "Connected"
-    #         self.connect = 1
-    #         self.ui.connect_toggle.setText("Disconnect")
-    #     else:
-    #         self.status = "Disconnected, timeout occured"
-    #         self.connect = 0
-    #         self.ui.connect_toggle.setText("Connect")
-    #     self.prev_status = self.status
-    #     if self.status != self.prev_status:
-    #         self.ui.log_entry.appendPlainText(self.status)
+            self.ui.log_entry.appendPlainText(self.status)
 
     def toggle_record_data(self):
         if self.collect_data == 0 and self.connect == 1:
@@ -257,57 +246,57 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
     def fetch_data(self):
         """
-        Receives data packet and formats it into a dictionary where the values
-        can be displayed in the GUI each update tick.
+        Fetches data from the WebSocket server and formats it into a dictionary
+        where the values can be displayed in the GUI each update tick.
         """
-        if type(self.data_handler.get_data()) == dict:
-            self.new_dict = self.data_handler.get_data()
-            self.data_point = self.new_dict["message"]
-            #self.ui.log_entry.appendPlainText(str(self.data_point))
-            #print(self.data_point)
+        # Retrieve the latest data from the WebSocket
+        self.raw_data = receive.get_data()
+        
+        if self.raw_data is not None and isinstance(self.raw_data, dict):
+            self.data_dict = self.raw_data  # Store the data in the class variable
+            #self.ui.log_entry.appendPlainText(f"Received data: {self.data_dict}")
+            #print(f"Received data: {self.data_dict}")
+        # else:
+        #     self.ui.log_entry.appendPlainText("No valid data received.")
+            #print("No valid data received.")
 
-    def updated_display(self):
+    def update_display(self):
         """
         Updates every element of the GUI.
         """
-    
-    def update_plot(self, data_series, x, y):
+        
+    def update_plots(self):
         """
         Updates selected plot on the GUI.
         """
-                # if type(self.data_handler.get_data()) == dict:
-        #     self.new_dict = self.data_handler.get_data()
-        #     self.data_point = self.new_dict["message"]
-        #     #self.ui.log_entry.appendPlainText(str(self.data_point))
-        #     print(self.data_point)
 
-        self.fetch_data()
+        self.data_dict = self.fetch_data()
 
         new_data = {
-            "bar_alt": self.data_point,
-            "kf_alt": self.data_point,
-            "trigger_alt": self.data_point,
-            "kf_vel": self.data_point,
-            "Int_vel": self.data_point,
-            "trigger_vel": self.data_point,
-            "x_accel": self.data_point,
-            "y_accel": self.data_point,
-            "z_accel": self.data_point,
-            "x_gyr": self.data_point,
-            "y_gyr": self.data_point,
-            "z_gyr": self.data_point,
-            "x_ang": self.data_point,
-            "y_ang": self.data_point,
-            "z_ang": self.data_point,
-            "temp": self.data_point, 
+            "bar_alt": self.data_dict["message"],
+            # "kf_alt": self.data_point,
+            # "trigger_alt": self.data_point,
+            # "kf_vel": self.data_point,
+            # "Int_vel": self.data_point,
+            # "trigger_vel": self.data_point,
+            # "x_accel": self.data_point,
+            # "y_accel": self.data_point,
+            # "z_accel": self.data_point,
+            # "x_gyr": self.data_point,
+            # "y_gyr": self.data_point,
+            # "z_gyr": self.data_point,
+            # "x_ang": self.data_point,
+            # "y_ang": self.data_point,
+            # "z_ang": self.data_point,
+            # "temp": self.data_point, 
         }
 
         # Maximum number of points to keep in the plot
         max_points = 50
 
         # Update each plot with the new data
-        for data_series, value in new_data.items():
-            plot_item = getattr(self.ui, data_series, None)
+        for self.data_dict, value in new_data.items():
+            plot_item = getattr(self.ui, self.data_dict, None)
             if plot_item:
                 # Append new data to the plot
                 x_data, y_data = plot_item.getData()

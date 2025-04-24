@@ -16,7 +16,7 @@ def on_message(ws, message):
     global data
     try:
         data = json.loads(message)
-        print(data)
+        #print(data)
     except json.JSONDecodeError:
         print("Invalid message received:", message)
 
@@ -27,6 +27,9 @@ def process_message():
     print(data)
     # Add any additional processing logic here
 '''
+
+def get_data():
+    return data
 
 def on_error(ws, error):
     """Handle WebSocket errors."""
@@ -75,7 +78,7 @@ def connect_websocket():
         running = False
         if ws and ws.sock and ws.sock.connected:
             ws.close()
-        return "Failed to connect: Timeout"
+        return "Failed to connect"
 
     return "Connected"
 
