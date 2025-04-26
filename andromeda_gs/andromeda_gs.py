@@ -9,6 +9,7 @@ from PyQt6 import QtCore, QtWidgets, QtGui
 from gsmw import Ui_MainWindow
 import pyqtgraph as pg
 import receive
+from datetime import datetime
 
 
 class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
@@ -31,65 +32,23 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.autosave_text = ""
         self.output = None
         self.converted = None
+        self.max_points = 50
         self.data_dict = {}
 
-        # initializing timer object
-        self.status_timer = QtCore.QTimer()
-
-
-        # setting icon
+        # setting icons
         self.icon_path = os.path.join(
             os.path.dirname(__file__), "images", "meatball.png"
         )
-        self.setWindowIcon(QtGui.QIcon("telepy.png"))
+        self.setWindowIcon(QtGui.QIcon(self.icon_path))
 
         # setting window name
         self.setWindowTitle("Andromeda Ground Station")
         pg.setConfigOptions(antialias=True)
 
-        # setting up plot legends
-        plot_LUT = {
-            "bar_alt": ["Plot1", "m"],
-            "kf_alt": ["Plot1", "g"],
-            #"trigger_alt": ["Plot1", "b"],
-            "kf_vel": ["Plot2", "b"],
-            #"Int_vel": ["Plot2", "r"],
-            #"trigger_vel": ["Plot2", "g"],
-            "x_accel": ["Plot4", "y"],
-            "y_accel": ["Plot4", "r"],
-            "z_accel": ["Plot4", "m"],
-            "x_gyr": ["Plot5", "y"],
-            "y_gyr": ["Plot5", "r"],
-            "z_gyr": ["Plot5", "m"],
-            "x_ang": ["Plot6", "y"],
-            "y_ang": ["Plot6", "r"],
-            "z_ang": ["Plot6", "m"],
-            "temp": ["Plot3", "y"],
-        }
-
-        self.ui.Plot1.addLegend()
-        self.ui.Plot1.setTitle("Altitude", color=[85, 170, 255], size="12pt")
-        self.ui.Plot2.addLegend()
-        self.ui.Plot2.setTitle("Velocity", color=[85, 170, 255], size="12pt")
-        self.ui.Plot3.addLegend()
-        self.ui.Plot3.setTitle("Temperature", color=[85, 170, 255], size="12pt")
-        self.ui.Plot4.addLegend()
-        self.ui.Plot4.setTitle("Linear Accel", color=[85, 170, 255], size="12pt")
-        self.ui.Plot5.addLegend()
-        self.ui.Plot5.setTitle("Angular Accel", color=[85, 170, 255], size="12pt")
-        self.ui.Plot6.addLegend()
-        self.ui.Plot6.setTitle("Orientation", color=[85, 170, 255], size="12pt")
-
-        for i in range(len(plot_LUT)):
-            data_series = list(plot_LUT.keys())[i]
-            plot_widget = plot_LUT[data_series][0]
-            series_color = pg.mkPen(color=plot_LUT[data_series][1], width=5)
-
-            setattr(
-                self.ui,
-                data_series,
-                getattr(self.ui, plot_widget).plot(name=data_series, pen=series_color),
-            )
+        self.setup_plots()
+        self.initialize_data_structures()
+        
+        
 
         # button color changes when hovering!
         self.ui.connect_toggle.setCursor(
@@ -193,11 +152,194 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.ui.save_data.clicked.connect(self.save_recorded_data)
         self.ui.autosave_toggle.clicked.connect(self.toggle_autosave)
 
-        # loop timer for display updates
+        # Initializing timer object
         self.update_timer = QtCore.QTimer(self)
-        self.update_timer.timeout.connect(self.fetch_data) # Update plots every 200 milliseconds
+        self.update_timer.timeout.connect(self.main_loop) # Update plots every 200 milliseconds
         self.update_timer.start(200)  # Check every 200 milliseconds 
         
+    # general functions
+    def main_loop(self): # need to figure out the exact architecture of this function
+        if self.connect == 1:
+            self.fetch_data()
+        self.update_plots()
+        
+    def setup_plots(self):
+        """Configure all plot widgets with proper settings"""
+        color1 = (150,212,236) # light shade of Olin blue
+        color2 = (25,150,207) # slightly darker shade of Olin blue
+        color3 = (4,93,162) # dark shade of Olin blue
+
+        self.plot_config = {
+            'Plot1': {
+                'title': 'Altitude',
+                'vars': ['KF_Z'],
+                'colors': [color1],
+                'unit': 'm'
+            },
+            'Plot2': {
+                'title': 'Velocity',
+                'vars': ['KF_VZ'],
+                'colors': [color1],
+                'unit': 'm/s'
+            },
+            'Plot3': {
+                'title': 'Orientation',
+                'vars': ['Euler_X', 'Euler_Y', 'Euler_Z'],
+                'colors': [color1, color2, color3],
+                'unit': 'deg'
+            },
+            'Plot4': {
+                'title': 'Temperature',
+                'vars': ['Temp'],
+                'colors': [color1],
+                'unit': '°C'
+            },
+            'Plot5': {
+                'title': 'Linear Acceleration',
+                'vars': ['Accel_X', 'Accel_Y', 'Accel_Z'],
+                'colors': [color1, color2, color3],
+                'unit': 'm/s²'
+            },
+            'Plot6': {
+                'title': 'Angular Velocity',
+                'vars': ['Gyro_X', 'Gyro_Y', 'Gyro_Z'],
+                'colors': [color1, color2, color3],
+                'unit': 'rad/s'
+            }
+        }
+
+        for plot_name, config in self.plot_config.items():
+            plot_widget = getattr(self.ui, plot_name)
+            plot_widget.clear()
+            plot_widget.setTitle(f"{config['title']} ({config['unit']})", color=(214,230,237), size='12pt')
+            plot_widget.setLabel('left', config['unit'])
+            plot_widget.setLabel('bottom', 'Time')
+            plot_widget.addLegend()
+            plot_widget.showGrid(x=True, y=True)
+            
+            config['curves'] = []
+            for var, color in zip(config['vars'], config['colors']):
+                curve = plot_widget.plot(pen=pg.mkPen(color, width=2), name=var)
+                config['curves'].append(curve)
+
+    def initialize_data_structures(self):
+        """Initialize data storage structures"""
+        self.recorded_data = pd.DataFrame(columns=[
+            'time', 'Accel_X', 'Accel_Y', 'Accel_Z', 
+            'Gyro_X', 'Gyro_Y', 'Gyro_Z', 'Temp',
+            'Euler_X', 'Euler_Y', 'Euler_Z', 'Baro_Alt',
+            'Longitude', 'Latitude', 'GPS_Alt', 'Phase',
+            'Continuity', 'Voltage', 'Link_Strength',
+            'KF_X', 'KF_Y', 'KF_Z', 'KF_VX', 'KF_VY', 'KF_VZ',
+            'KF_Drag', 'Diagnostic_Message'
+        ])
+        
+        self.plot_history = {}
+        for plot_name, config in self.plot_config.items():
+            self.plot_history[plot_name] = {
+                'time': np.zeros(self.max_points),
+                'data': {var: np.zeros(self.max_points) for var in config['vars']},
+                'ptr': 0
+            }
+
+    # def update_plots(self):
+    #     """Update all plots with current data"""
+    #     for plot_name, plot_info in self.plot_history.items():
+    #         ptr = plot_info['ptr']
+    #         config = self.plot_config[plot_name]
+            
+    #         if ptr == 0:
+    #             x_data = plot_info['time']
+    #             y_data = {var: plot_info['data'][var] for var in config['vars']}
+    #         else:
+    #             x_data = plot_info['time'][:ptr]
+    #             y_data = {var: plot_info['data'][var][:ptr] for var in config['vars']}
+            
+    #         for i, var in enumerate(config['vars']):
+    #             config['curves'][i].setData(x_data, y_data[var])
+            
+    #         self.auto_range_plot(plot_name, x_data, y_data)
+
+    def update_plots(self):
+        
+    
+
+    def auto_range_plot(self, plot_name, x_data, y_data):
+        """Auto-scale plot to fit data"""
+        plot_widget = getattr(self.ui, plot_name)
+        
+        if len(x_data) > 0:
+            x_min, x_max = np.min(x_data), np.max(x_data)
+            x_padding = max(0.1 * (x_max - x_min), 1.0)
+            plot_widget.setXRange(x_min - x_padding, x_max + x_padding)
+        
+        all_y = np.concatenate([yd for yd in y_data.values()])
+        valid_y = all_y[~np.isnan(all_y)]
+        if len(valid_y) > 0:
+            y_min, y_max = np.min(valid_y), np.max(valid_y)
+            y_padding = max(0.1 * (y_max - y_min), 0.1)
+            plot_widget.setYRange(y_min - y_padding, y_max + y_padding)
+
+    def fetch_data(self):
+        """Fetch new data and update buffers"""
+        self.raw_data = receive.get_data()
+        print(self.raw_data)
+
+        if self.raw_data is not None and self.collect_data:
+            # Store in DataFrame
+            new_row = pd.DataFrame([self.raw_data])
+            self.recorded_data = pd.concat([self.recorded_data, new_row], ignore_index=True)
+
+            # Update plot buffers
+            self.update_plot_buffers(self.raw_data)
+            
+            # Trim DataFrame if needed
+            #if len(self.recorded_data) > 10000:
+            #    self.recorded_data = self.recorded_data.iloc[-10000:]
+    
+    def update_plot_buffers(self, new_data):
+        """Update circular buffers with new data"""
+        current_time = new_data.get('time', time.time())
+        
+        for plot_name, plot_info in self.plot_history.items():
+            ptr = plot_info['ptr']
+            plot_info['time'][ptr] = current_time
+            
+            for var in plot_info['data'].keys():
+                if var in new_data:
+                    try:
+                        plot_info['data'][var][ptr] = float(new_data[var])
+                    except (ValueError, TypeError):
+                        plot_info['data'][var][ptr] = np.nan
+            
+            plot_info['ptr'] = (ptr + 1) % self.max_points
+
+    def update_display(self):
+        """
+        Updates every element of the GUI.
+        """
+        
+        self.fetch_data() # Fetch the latest data from the WebSocket
+
+        self.update_plots("temp", self.x, self.y)
+
+
+    def closeEvent(self, event):
+        """
+        Handle the window close event.
+        """
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Exit Application",
+            "Are you sure you want to exit?",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+        )
+
+        if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+            event.accept()  # Close the application
+            sys.exit(0)
+        else:
+            event.ignore()  # Ignore the close event
 
     # button functions
     # connect_toggle handles basic connectivity logic, needs a lot of improvement
@@ -238,83 +380,19 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.autosave = 0
             self.ui.autosave_toggle.setText("Auto Save: Off")
 
-    def save_recorded_data(self):
-        pass
+    def save_recorded_data(self): # saves data to a CSV file
+        """Save the collected data to CSV"""
+        filename = str(datetime.now().strftime("%Y-%m-%d_%H.%M.%S")) + "_flightdata.csv"
+        if not self.recorded_data.empty:
+            self.recorded_data.to_csv(filename, index=False)
+            self.ui.log_entry.appendPlainText(f"Data saved to {filename}")
 
     def clear_recorded_data(self):
         pass
-
-    def fetch_data(self):
-        """
-        Fetches data from the WebSocket server and formats it into a dictionary
-        where the values can be displayed in the GUI each update tick.
-        """
-        # Retrieve the latest data from the WebSocket
-        self.raw_data = receive.get_data()
-        
-        if self.raw_data is not None and isinstance(self.raw_data, dict):
-            self.data_dict = self.raw_data  # Store the data in the class variable
-            #self.ui.log_entry.appendPlainText(f"Received data: {self.data_dict}")
-            #print(f"Received data: {self.data_dict}")
-        # else:
-        #     self.ui.log_entry.appendPlainText("No valid data received.")
-            #print("No valid data received.")
-
-    def update_display(self):
-        """
-        Updates every element of the GUI.
-        """
-        
-    def update_plots(self):
-        """
-        Updates selected plot on the GUI.
-        """
-
-        self.data_dict = self.fetch_data()
-
-        new_data = {
-            "bar_alt": self.data_dict["message"],
-            # "kf_alt": self.data_point,
-            # "trigger_alt": self.data_point,
-            # "kf_vel": self.data_point,
-            # "Int_vel": self.data_point,
-            # "trigger_vel": self.data_point,
-            # "x_accel": self.data_point,
-            # "y_accel": self.data_point,
-            # "z_accel": self.data_point,
-            # "x_gyr": self.data_point,
-            # "y_gyr": self.data_point,
-            # "z_gyr": self.data_point,
-            # "x_ang": self.data_point,
-            # "y_ang": self.data_point,
-            # "z_ang": self.data_point,
-            # "temp": self.data_point, 
-        }
-
-        # Maximum number of points to keep in the plot
-        max_points = 50
-
-        # Update each plot with the new data
-        for self.data_dict, value in new_data.items():
-            plot_item = getattr(self.ui, self.data_dict, None)
-            if plot_item:
-                # Append new data to the plot
-                x_data, y_data = plot_item.getData()
-                if x_data is None or y_data is None:
-                    x_data, y_data = [], []
-                x_data = list(x_data) + [time.time()]  # Use time as x-axis
-                y_data = list(y_data) + [value]
-
-                # Keep only the last max_points points
-                x_data = x_data[-max_points:]
-                y_data = y_data[-max_points:]
-
-                # Update the plot with the trimmed data
-                plot_item.setData(x=x_data, y=y_data)
 
     
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     window = MainWindow()
-    window.show()
+    window.showMaximized()
     sys.exit(app.exec())
