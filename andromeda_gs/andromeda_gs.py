@@ -241,6 +241,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def initialize_data_structures(self):
         """Initialize data storage structures"""
 
+        self.raw_data = None  # Placeholder for raw data received from the WebSocket
+
         # Initialize a Pandas DataFrame to store and save data for later use
         # This will be used to save data to a CSV file, *not for plotting*
         self.recorded_data = pd.DataFrame(columns=[
@@ -288,7 +290,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         
         # Initialize flight phase labels and colors
         self.phase_labels = ["IDLE", "ARMED", "ASCENT", "APOGEE", "DECENT"]
-        self.phase_colors = ["85, 156, 242", "232, 21, 21", "224, 104, 29", "214, 61, 217", "61, 217, 82"]
+        self.phase_colors = ["77, 86, 88", "0, 148, 255", "0, 103, 192", "173, 216, 230", "0, 168, 150"]
+
+        #  Initialize error statuses in the GUI
+        self.errors = [self.ui.IMU_error, self.ui.GPS_error, self.ui.ALT_error]
 
     def fetch_data(self):
         """Fetch new data and update buffers"""
@@ -317,6 +322,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         """
         Updates every element of the GUI.
         """
+
+        # Update the plots and display elements with the latest data
+        if self.raw_data is None:
+            return
+        
         max_points = 50
 
         # TEST
@@ -381,13 +391,38 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.ui.lat_val.setText(str(self.raw_data["Latitude"]))
             self.ui.lon_val.setText(str(self.raw_data["Longitude"]))
             self.ui.alt_val.setText(str(self.raw_data["GPS_Alt"])) # this value can be replaced entirely, probably with drag?
-            self.ui.phase_val.setText(str(self.raw_data["Phase"])) # this needs to be translated into changing an element in the GUI
             self.ui.voltage_val.setText(str(self.raw_data["Voltage"]))
             self.ui.RSSI_val.setText(str(self.raw_data["Link_Strength"]))
             self.ui.diagnostic_message_val.setText(str(self.raw_data["Diagnostic_Message"])) # this needs to be translated into changing an element in the GUI
             self.ui.continuity_val.setText(str(self.raw_data["Continuity"])) # are these the pyros? need to figure out what data is being sent
+            
+            # Change the text of the flight phase label to the current phase
+            self.flight_phase.setStyleSheet("QLabel {\n"
+            "    background-color: rgb(" + self.phase_colors[int(self.raw_data["Phase"])-1]  + ");\n"
+            "    border-radius: 5px;\n"
+            "    padding: 1px;\n"
+            "    color: white;\n"
+            "}\n"
+            "")
 
-        
+            # convert Diagnostic_Message to 8 bit binary
+            bin_diag = bin(int(self.raw_data["Diagnostic_Message"]))
+            # remove the first two characters (0b) and convert to a list of bits
+            bin_diag_list = list(bin_diag[2:])
+            
+            # loop through the errors and set the color based on current error status
+            for i, error in enumerate(self.errors, start=1):
+                color = "rgb(13,84,142)" if bin_diag_list[-i]=="0" else "rgb(13,84,142)" # default color for all elements
+                if bin_diag_list[-i] == "1": # trigger IMU 
+                    error.setStyleSheet(f"""
+                        QLabel {{
+                            background-color: {color};
+                            border-radius: 5px;
+                            padding: 1px;
+                            color: white;
+                        }}
+                    """)
+
     def closeEvent(self, event):
         '''
         Handle the window close event.
